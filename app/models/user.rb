@@ -236,7 +236,7 @@ class User < ActiveRecord::Base
 
   def self.get_all_passwd_response
     user_array = []
-    User.all.each do |user|
+    User.eager_load(:groups).all.each do |user|
       user_array << user.user_passwd_response
     end
     user_array
@@ -312,11 +312,13 @@ class User < ActiveRecord::Base
   end
 
   def user_passwd_response
+    ulid = groups.where(name: user_login_id)
+
     user_hash = {}
     user_hash[:pw_name] = user_login_id
     user_hash[:pw_passwd]  = "x"
     user_hash[:pw_uid] = uid.to_i
-    user_hash[:pw_gid] = groups.where(name: user_login_id).first.gid if groups.where(name: user_login_id).count > 0
+    user_hash[:pw_gid] = ulid.first.gid if ulid.size > 0
     user_hash[:pw_gecos]  = "#{name}"
     user_hash[:pw_dir] = "#{HOME_DIR}/#{user_login_id}"
       user_hash[:pw_shell] = "/bin/bash"

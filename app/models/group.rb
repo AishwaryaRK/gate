@@ -40,7 +40,7 @@ class Group < ActiveRecord::Base
 
   def self.get_all_response
     response_array = []
-    Group.all.each do |group|
+    Group.eager_load(:users).all.each do |group|
       response_array << group.group_response
     end
     response_array

@@ -18,10 +18,9 @@ hr
   .col-md-2
   .col-md-5
     .list-group
-      .group-user-list
-      .list-group-item#group-user-vpn-submit
-        = "Please select a group from left"
-
+    div id='group-user'
+    .list-group-item#group-user-vpn-submit
+      = "Please select a group from left"
 
 
 javascript:
@@ -41,7 +40,7 @@ javascript:
       var vpn_id = $(this).data('vpn-id');
       selected_vpn_id = vpn_id;
       selected_group_id = group_id;
-      $(".group-user-list").append("<div class='list-group-item'>Users</div>");
+
       display_users(vpn_id, group_id)
 
 
@@ -85,15 +84,26 @@ javascript:
   function display_users(vpn_id, group_id) {
     $.get("/vpns/"+vpn_id+"/groups/"+group_id + "/users", function(data, status){
       if (status == 'success') {
+        group_user = document.getElementById("group-user");
+        group_user.insertAdjacentHTML("beforeend", "<table class='table table-striped'><thead><tr><th>User</th><th>Email</th></tr></thead></table>");
+
         var users = data;
         for(var i = 0; i < users['enabled'].length; i++) {
+<<<<<<< Updated upstream
           var list_item = "<div class='list-group-item'><div class='checkbox'><label><input type='checkbox' data-user-id="+users['enabled'][i]['id']+" checked value=''>"+users['enabled'][i]['name']+"</label></div></div>";
           $(".group-user-list").append(list_item);
         }
         for(var j = 0; j < users['disabled'].length; j++) {
           var list_item = "<div class='list-group-item'><div class='checkbox'><label><input type='checkbox' data-user-id="+users['disabled'][j]['id']+" value=''>"+users['disabled'][j]['name']+"</label></div></div>";
           $(".group-user-list").append(list_item);
+=======
+          group_user.insertAdjacentHTML("beforeend", "<table class='table table-striped'><tbody><tr><td><div class='checkbox'><input type='checkbox' data-user-id="+users['enabled'][i]['id']+" checked value=''><a href='/users/"+users['enabled'][i]['id']+"'>"+users['enabled'][i]['name']+"</a></div></td><td><div class='checkbox'>"+users['enabled'][i]['email']+"</label></td></tr></tbody></table>");
         }
+        for(var j = 0; j < users['disabled'].length; j++) {
+          group_user.insertAdjacentHTML("beforeend", "<table class='table table-striped'><tbody><tr><td><div class='checkbox'><input type='checkbox' data-user-id="+users['disabled'][j]['id']+" value=''><a href='/users/"+users['disabled'][j]['id']+"'>"+users['disabled'][j]['name']+"</a></div></td><td><div class='checkbox'>"+users['disabled'][j]['email']+"</label></td></tr></tbody></table>");
+>>>>>>> Stashed changes
+        }
+
         var submit_btn = "<a href='' class='btn btn-primary'>Submit</a>";
         $("#group-user-vpn-submit").append(submit_btn);
       }
