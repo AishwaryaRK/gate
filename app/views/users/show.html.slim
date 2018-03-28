@@ -13,6 +13,19 @@
              span.input-group-text @
           input#email.form-control placeholder="you@example.com" readonly="" type="email" value="#{@user.email}"
 
+  form.needs-validation novalidate="" 
+    .form-row.mb-3
+      .col
+        b Your Access Token
+      .col
+        - if flash[:token]
+          .alert.alert-warning role="alert"
+            | Important! please make note of this token, you will see it only this once.
+          pre
+            = flash[:token]
+        - else
+          = link_to 'Regenerate Token', regenerate_token_user_path(@user), :data => {:confirm => 'Are you sure?'}
+
   - if current_user.admin?
     .card
       .card-body
@@ -47,11 +60,11 @@
           = form_tag  add_group_path, method: :post do
             .row
               .col
-                = select_tag "group_id", options_from_collection_for_select(@groups.sort_by {|group| group.name}, "id", "name"), class: "form-control"
+                = text_field_tag "group_id", "", class: "form-control"
               .col
                 .row
                   .col
-                   = submit_tag "Add Group", class: "form-control btn-md btn-primary pull-right"
+                   = submit_tag "Add Group", class: "form-control btn-md btn-primary pull-right", disabled: true
                   .col
       = "No groups are associated with this user" if @user.groups.count == 0
   br

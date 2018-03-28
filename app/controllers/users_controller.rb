@@ -1,7 +1,7 @@
 class UsersController < ApplicationController
   before_action :set_paper_trail_whodunnit
 
-  before_filter :authenticate_user!, :except => [:user_id, :verify, :authenticate, :authenticate_cas, :authenticate_ms_chap, :authenticate_pam, :public_key] unless Rails.env.development?
+  before_filter :authenticate_user!, :except => [:user_id, :verify, :authenticate, :authenticate_cas, :authenticate_ms_chap, :authenticate_pam, :public_key] 
 
   def index
     @user_search = params[:user_search]
@@ -11,13 +11,23 @@ class UsersController < ApplicationController
 
   def show
     @user = User.where(id: params[:id]).first
+
+    if @user.access_token.blank?
+      access_token = AccessToken.new
+      access_token.token = ROTP::Base32.random_base32
+      access_token.user = @user
+      access_token.save!
+    end
+
     @vpns = Vpn.user_vpns @user
+
     if current_user.admin? || current_user == @user
       @groups = Group.all
       render_404 if @user.blank?
+
       if @user.present? && ( current_user.admin? || current_user.id == @user.id)
         respond_to do |format|
-          format.html
+          format.html { render :show, flash: {token: access_token.try(:token)} }
         end
       end
     end
@@ -36,6 +46,37 @@ class UsersController < ApplicationController
     end
 
     form_response(response_message)
+  end
+
+  def search
+    @users = User.
+      where("name LIKE :q OR email LIKE :q", q: "%#{params[:q]}%").
+      where(active: true).
+      order("name ASC").
+      limit(20)
+    data = @users.map{ |user| {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      name_email: "#{user.name} - #{user.email}"
+    }}
+    render json: data
+  end
+
+  # GET /users/:id/regenerate_token
+  def regenerate_token
+    @user = User.find(params[:id])
+    @access_token = @user.access_token
+    @access_token.token = ROTP::Base32.random_base32
+    respond_to do |format|
+      if @access_token.save
+        format.html { redirect_to user_path(@user.id), notice: 'Token regenerated.', flash: {token: @access_token.token} }
+        format.json { render :show, status: :ok, location: @user }
+      else
+        format.html { redirect_to user_path(@user.id), notice: 'Token failed to regenerate.' }
+        format.json { render json: @user.errors, status: :unprocessable_entity }
+      end
+    end
   end
 
   private

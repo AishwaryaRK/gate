@@ -1,10 +1,13 @@
 class VpnsController < ApplicationController
   before_action :set_paper_trail_whodunnit
-  before_action :authorize_user, except: [:create_group_associated_users, :show, :index, :user_associated_groups, :group_associated_users]
+  before_action :authorize_user, except: [:create_group_associated_users, :show, :index, :user_associated_groups, :group_associated_users, :search]
   before_action :set_vpn, only: [:show, :edit, :update, :destroy, \
                                  :user_associated_groups, :add_dns_server, :remove_dns_server, \
                                  :add_search_domain, :remove_search_domain, \
-                                 :add_supplemental_match_domain, :remove_supplemental_match_domain, :assign_group]
+                                 :add_supplemental_match_domain, :remove_supplemental_match_domain, \
+                                 :migrate_to_new_group, :assign_group]
+
+  before_filter :authenticate_user!
 
   require 'securerandom'
 
@@ -165,6 +168,15 @@ class VpnsController < ApplicationController
       format.html { redirect_to vpns_path, notice: 'Vpn was successfully destroyed.' }
       format.json { render status: :ok, json: "vpn destroyed" }
     end
+  end
+
+  def search
+    @vpns = Vpn.
+      where("name LIKE ?", "%#{params[:q]}%").
+      order("name ASC").
+      limit(20)
+    data = @vpns.map{ |vpn| {id: vpn.id, name: vpn.name} }
+    render json: data
   end
 
   private

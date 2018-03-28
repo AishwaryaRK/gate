@@ -43,8 +43,6 @@ Rails.application.routes.draw do
   get 'nss/passwd' => 'nss#passwd', as: 'nss_passwd', format: :json
   get 'nss/host' => 'nss#host', as: 'nss_host', format: :json
   post 'nss/host' => 'nss#add_host', as: 'add_nss_host', format: :json
-  post 'nss/user' => 'nss#add_user_to_group', as: 'add_nss_user_to_group', format: :json
-  delete 'nss/user' => 'nss#remove_user_from_group', as: 'remove_nss_user_from_group', format: :json
   get 'nss/user/groups' => 'nss#groups_list', as: 'profile_groups_list', format: :json
 
   #Specific Group routes
@@ -59,18 +57,12 @@ Rails.application.routes.draw do
   delete 'groups/:id/host_machine/:host_machine_id' => 'groups#delete_machine', as: 'group_host_machine'
   delete 'host_machines/:id/groups/:group_id' => 'host_machines#delete_group', as: 'host_machine_group'
   post 'host_machines/:id/add_group' => 'host_machines#add_group', as: 'add_group_to_machine'
-
-
+  get 'groups/search' => 'groups#search', format: :json
 
   # api routes
   namespace :api do
     namespace :v1 do
       post 'users' => 'users#create', as: 'add_users_api', format: :json
-      post 'add_user_list_to_group' => 'groups#add_users_list', format: :json
-      post 'add_vpn_list_to_a_group' => 'groups#add_vpns_list', format: :json
-      post 'give_hostname_pattern_access_to_user_list' => 'hosts#add_users_list', format: :json
-      post 'add_user_list_to_a_vpn' => 'vpns#add_users_list', format: :json
-      post 'add_properties_to_vpn' => 'vpns#add_properties', format: :json
       get 'users/profile' => 'users#show', format: :json, :constraints => { format: 'json' }
       post 'users/profile' => 'users#update', format: :json, :constraints => { format: 'json' }
     end
@@ -80,27 +72,50 @@ Rails.application.routes.draw do
 
   get '/admin' => 'admin#index'
 
-  resources :host_machines
+  resources :host_machines do
+    collection do
+      get 'search', format: :json
+    end
+  end
+
   resources :groups
   #resources :groups do
   #  resources :members
   #  resources :group_admins
   #end
-  resources :users
+  resources :users do
+    collection do
+      get 'search', format: :json
+    end
+    member do
+      get 'regenerate_token'
+    end
+  end
 
   resource :ping, only: [:show]
 
-  resources :vpns
+  resources :vpns do
+    collection do
+      get 'search', format: :json
+    end
+  end
+  resources :api_resources do
+    collection do
+      get 'search', format: :json
+    end
+    member do
+      get 'regenerate_access_key'
+    end
+  end
 
+  get "api_resource/authenticate/:access_key/:access_token" => "api_resources#authenticate", as: "api_resource_authenticate"
   post 'vpns/:id/dns_server' => 'vpns#add_dns_server', as: 'add_dns_to_vpn'
   post 'vpns/:id/search_domain' => 'vpns#add_search_domain', as: 'add_search_domain_to_vpn'
   post 'vpns/:id/supplemental_match_domain' => 'vpns#add_supplemental_match_domain', as: 'add_supplemental_match_domain_to_vpn'
   delete 'vpns/:id/dns_server/:vpn_domain_name_server_id' => 'vpns#remove_dns_server', as: 'remove_dns_from_vpn'
   delete 'vpns/:id/search_domain/:vpn_search_domain_id' => 'vpns#remove_search_domain', as: 'remove_search_domain_from_vpn'
   delete 'vpns/:id/supplemental_match_domain/:vpn_supplemental_match_domain_id' => 'vpns#remove_supplemental_match_domain', as: 'remove_supplemental_match_domain_from_vpn'
-
   post 'vpns/:id/group' => 'vpns#assign_group', as: 'assign_group_to_vpn'
-
   get 'vpns/:id/groups/:group_id/groups' => 'vpns#user_associated_groups', format: :json
   get 'vpns/:vpn_id/groups/:group_id/users' => 'vpns#group_associated_users', format: :json
   post 'vpns/:vpn_id/groups/:group_id/users' => 'vpns#create_group_associated_users', format: :json

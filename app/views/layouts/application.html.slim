@@ -8,7 +8,9 @@ html lang="en"
     = csrf_meta_tags
     = stylesheet_link_tag "application", :media => "all"
     = stylesheet_link_tag "general", :media => "all"
+    = stylesheet_link_tag "//cdnjs.cloudflare.com/ajax/libs/selectize.js/0.12.4/css/selectize.bootstrap3.min.css"
     = javascript_include_tag "application"
+    = javascript_include_tag "//cdnjs.cloudflare.com/ajax/libs/selectize.js/0.12.4/js/standalone/selectize.min.js"
     /! Le HTML5 shim, for IE6-8 support of HTML elements
     /[if lt IE 9]
       = javascript_include_tag "//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.2/html5shiv.min.js"
@@ -30,20 +32,23 @@ html lang="en"
           li#hostmachine-index.nav-item
            - if current_user.admin? 
              = link_to "Hosts", host_machines_path, class: "nav-link"
+          li#apiresource-index.nav-item
+           = link_to "APIs", api_resources_path, class: "nav-link"
           li#vpn-index.nav-item
            = link_to "VPNs", vpns_path, class: "nav-link"
           li.nav-item.dropdown
-           - if current_user.admin? 
             a#dropdown01.nav-link.dropdown-toggle aria-expanded="false" aria-haspopup="true" data-toggle="dropdown" href="http://example.com"  New
             .dropdown-menu aria-labelledby="dropdown01" 
-              = link_to "Group", new_group_path, class: "dropdown-item"
-              = link_to "VPN", new_vpn_path, class: "dropdown-item"
+              = link_to "API", new_api_resource_path, class: "dropdown-item"
+              - if current_user.admin? 
+                = link_to "Group", new_group_path, class: "dropdown-item"
+                = link_to "VPN", new_vpn_path, class: "dropdown-item"
 
         ul.nav.navbar-nav.navbar-right
           li.nav-link
-            = link_to "Sign out", users_sign_out_path,:method => :delete 
+            = link_to "Sign out", users_sign_out_path,:method => :delete , class: "nav-link"
           li.nav-link.active
-            = link_to current_user.name, user_path(current_user.id)
+            = link_to current_user.name, user_path(current_user.id), class: "nav-link"
         /! /.nav-collapse
     .container-fluid
       = yield

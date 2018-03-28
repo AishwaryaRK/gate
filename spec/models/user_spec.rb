@@ -35,6 +35,29 @@ RSpec.describe User, type: :model do
     end
   end
 
+  it "should set deactivation time when user is deactivated" do
+    user = create(:user)
+    user.update!(active: false)
+    expect(user.deactivated_at).not_to be nil
+  end
+
+  describe ".purge!" do
+    it "should remove group associations for inactive user" do
+      user = create(:user)
+      user.update!(active: false)
+      user.purge!
+      user.reload
+      expect(user.group_associations.length).to eq 0
+    end
+
+    it "should NOT remove group associations for active user" do
+      user = create(:user)
+      user.purge!
+      user.reload
+      expect(user.group_associations.length).not_to eq 0
+    end
+  end
+
   it "should check valid email address" do
     #email address always has 2 parts
     email_address = "satrya@gmail.com"
@@ -183,10 +206,8 @@ RSpec.describe User, type: :model do
 
   it "should authenticate ms chap" do
     user = create(:user)
-    host = Host.new
-    host.user = user
-    host.host_pattern = ".*"
-    host.save!
+    vpn = Vpn.create(name: :"X", ip_address: "10.240.0.1" )
+    user.groups.first.vpns << vpn
     params = {}
     params[:addresses] = "10.240.0.1"
     params[:user] = user.user_login_id
@@ -242,4 +263,4 @@ RSpec.describe User, type: :model do
       end
     end
   end
- nd
+end

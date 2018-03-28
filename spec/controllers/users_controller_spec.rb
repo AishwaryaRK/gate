@@ -41,4 +41,39 @@ RSpec.describe UsersController, type: :controller do
       end
     end
   end
+
+  describe 'Search for Users' do
+    it "should return active users according to supplied search string" do
+      sign_in user
+      users = create_list(:user, 3)
+      users.last.update(active: false)
+      users.pop
+      get :search, { q: "TestUser" }
+      returned_ids = JSON.parse(response.body).collect{|c| c['id']}
+      expect(returned_ids).to eq(users.collect(&:id))
+    end
+  end
+
+  describe "GET #regenerate_token" do
+    before(:each) do
+      access_token = AccessToken.new
+      access_token.token = ROTP::Base32.random_base32
+      access_token.user = user
+      access_token.save!
+
+      sign_in user
+    end
+
+    it "regenerates access token of the requested user" do
+      old_hashed_token = user.access_token.hashed_token
+      get :regenerate_token, {:id => user.to_param}
+      user.reload
+      expect(user.access_token.hashed_token).to_not eq old_hashed_token
+    end
+
+    it "redirects to the user" do
+      get :regenerate_token, {:id => user.to_param}
+      expect(response).to redirect_to(user_path(user.id))
+    end
+  end
 end

@@ -11,16 +11,30 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20180219150818) do
+ActiveRecord::Schema.define(version: 20180318083000) do
 
   create_table "access_tokens", force: :cascade do |t|
-    t.string   "token",      limit: 255
-    t.datetime "created_at",             null: false
-    t.datetime "updated_at",             null: false
-    t.integer  "user_id",    limit: 4
+    t.string   "hashed_token", limit: 255
+    t.datetime "created_at",               null: false
+    t.datetime "updated_at",               null: false
+    t.integer  "user_id",      limit: 4
   end
 
+  add_index "access_tokens", ["hashed_token"], name: "index_access_tokens_on_hashed_token", using: :btree
   add_index "access_tokens", ["user_id"], name: "fk_rails_96fc070778", using: :btree
+
+  create_table "api_resources", force: :cascade do |t|
+    t.string   "name",              limit: 255
+    t.string   "description",       limit: 255
+    t.string   "hashed_access_key", limit: 255
+    t.datetime "created_at",                    null: false
+    t.datetime "updated_at",                    null: false
+    t.integer  "user_id",           limit: 4
+    t.integer  "group_id",          limit: 4
+  end
+
+  add_index "api_resources", ["group_id"], name: "index_api_resources_on_group_id", using: :btree
+  add_index "api_resources", ["user_id"], name: "index_api_resources_on_user_id", using: :btree
 
   create_table "group_admins", force: :cascade do |t|
     t.integer  "group_id",   limit: 4
@@ -39,6 +53,8 @@ ActiveRecord::Schema.define(version: 20180219150818) do
     t.datetime "updated_at",           null: false
   end
 
+  add_index "group_associations", ["group_id", "user_id"], name: "index_group_associations_on_group_id_and_user_id", using: :btree
+
   create_table "groups", force: :cascade do |t|
     t.string   "name",        limit: 255
     t.integer  "gid",         limit: 4
@@ -49,6 +65,7 @@ ActiveRecord::Schema.define(version: 20180219150818) do
     t.string   "description", limit: 255
   end
 
+  add_index "groups", ["gid"], name: "index_groups_on_gid", using: :btree
   add_index "groups", ["name"], name: "index_groups_on_name", unique: true, using: :btree
 
   create_table "host_access_groups", force: :cascade do |t|
@@ -58,12 +75,17 @@ ActiveRecord::Schema.define(version: 20180219150818) do
     t.datetime "updated_at",                null: false
   end
 
+  add_index "host_access_groups", ["host_machine_id", "group_id"], name: "index_host_access_groups_on_host_machine_id_and_group_id", using: :btree
+
   create_table "host_machines", force: :cascade do |t|
     t.string   "name",       limit: 255
     t.datetime "created_at",             null: false
     t.datetime "updated_at",             null: false
     t.string   "api_key",    limit: 255
+    t.string   "access_key", limit: 255
   end
+
+  add_index "host_machines", ["access_key"], name: "index_host_machines_on_access_key", using: :btree
 
   create_table "hosts", force: :cascade do |t|
     t.string   "host_pattern", limit: 255
@@ -124,10 +146,13 @@ ActiveRecord::Schema.define(version: 20180219150818) do
     t.text     "public_key",             limit: 65535
     t.string   "user_login_id",          limit: 255
     t.string   "product_name",           limit: 255
+    t.string   "access_key",             limit: 255
+    t.datetime "deactivated_at"
   end
 
   add_index "users", ["email"], name: "index_users_on_email", unique: true, using: :btree
   add_index "users", ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true, using: :btree
+  add_index "users", ["uid"], name: "index_users_on_uid", using: :btree
   add_index "users", ["user_login_id"], name: "index_users_on_user_login_id", using: :btree
 
   create_table "versions", force: :cascade do |t|
@@ -195,6 +220,8 @@ ActiveRecord::Schema.define(version: 20180219150818) do
   end
 
   add_foreign_key "access_tokens", "users"
+  add_foreign_key "api_resources", "groups"
+  add_foreign_key "api_resources", "users"
   add_foreign_key "group_admins", "groups"
   add_foreign_key "group_admins", "users"
   add_foreign_key "hosts", "users"

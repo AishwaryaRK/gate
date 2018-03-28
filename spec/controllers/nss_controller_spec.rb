@@ -3,6 +3,7 @@ require 'rails_helper'
 RSpec.describe NssController, type: :controller do
   let(:access_token) { SecureRandom.uuid }
   let(:email) { Faker::Internet.email }
+  let(:user) { FactoryBot.create(:user, name: "foobar", user_login_id: "foobar", email: "foobar@foobar.com")  }
 
   before(:each) do
     group = create(:group)
@@ -29,13 +30,105 @@ RSpec.describe NssController, type: :controller do
     expect(data["success"]).to eq(true)
   end
 
-  it "should remove user from group" do
-    create(:access_token, token: access_token)
-    user = create(:user, email: email)
-    old_group_size = user.groups.size
-    delete :remove_user_from_group, token: access_token, name: user.email, group_name: user.groups.last.name
-    data = JSON.parse(response.body)
-    expect(data["success"]).to eq(true)
-    expect(user.groups.size).not_to eq(old_group_size - 1)
+  it "should return sysadmins for that host" do 
+
+    sign_in user
+    access_token = create(:access_token)
+
+    json =  { token: access_token.token, name: "random_host_01" }
+    post "add_host", { token: access_token.token, name: "random_host_01", group_name: "random_group_01", format: :json}
+    body = response.body
+    access_key = JSON.parse(body)["access_key"]
+
+    host = HostMachine.find_by(name: "random_host_01")
+    expect(access_key).to eq host.access_key
+
+
+    group = create(:group)
+    user = create(:user)
+    group.host_machines << host
+    if !group.member? user
+      group.users << user
+    end
+    user = create(:user)
+    if !group.member? user
+      group.users << user
+    end
+    group.save!
+    host.reload
+    group.reload
+
+    expect(host.sysadmins.count).to eq 2
+    get "host", { token: access_key, format: json }
+    body = JSON.parse(response.body)
+
+    expect(body.count).to eq 3
+    expect(body[2]["gr_mem"].count).to eq 2
+
+
+    get "group", { token: access_key, format: json }
+    body = JSON.parse(response.body)
+
+    expect(body.count).to eq 3
+    expect(body[0]["gr_mem"].count).to eq 1
+    expect(body[1]["gr_mem"].count).to eq 1
+    expect(body[2]["gr_mem"].count).to eq 2
+   
+    expect(Group.find_by(name: "random_group_01")).not_to eq nil
+    expect(Group.find_by(name: "random_host_01_host_group")).not_to eq nil
+
   end
+
+  it "should return members of sysadmins if no other group exists" do
+
+    access_token = create(:access_token)
+    group = create(:group, name: "sysadmins")
+    user = create(:user)
+    user.groups << group
+
+    post "add_host", { token: access_token.token, name: "random_host_01", group_name: "random_group_01", format: :json}
+    host = HostMachine.first
+    expect(host.name).to eq "random_host_01"
+    host.groups << group
+
+
+    get "group", { token: host.access_key, format: :json }
+    body = JSON.parse(response.body)
+
+    expect(body.count).to eq 2
+    expect(body[0]["gr_mem"].count).to eq 1
+    expect(body[1]["gr_mem"].count).to eq 1
+    
+    expect(body[0]["gr_mem"][0]).to eq user.user_login_id
+    expect(body[1]["gr_mem"][0]).to eq user.user_login_id
+    
+   
+  end
+
+  it "should return all the users for the host" do
+
+    access_token = create(:access_token)
+    group = create(:group, name: "sysadmins")
+    user = create(:user)
+    user.groups << group
+
+    post "add_host", { token: access_token.token, name: "random_host_01", group_name: "random_group_01", format: :json}
+    host = HostMachine.first
+    expect(host.name).to eq "random_host_01"
+    host.groups << group
+
+    host.reload
+    group.reload
+    user.reload
+
+
+    get "passwd", { token: host.access_key, format: :json }
+    body = JSON.parse(response.body)
+    expect(body.count).to eq 1
+    get "passwd", { token: host.access_key, format: :json }
+    body = JSON.parse(response.body)
+    expect(body.count).to eq 1
+  end
+
+
 end

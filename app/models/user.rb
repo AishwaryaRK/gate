@@ -28,6 +28,20 @@ class User < ActiveRecord::Base
   HOME_DIR = "/home"
   USER_SHELL = "/bin/bash"
 
+  after_save :stamp_deactivation_time
+
+  def name_email
+    "#{name} (#{email})"
+  end
+
+  def self.get_sysadmins uids
+    user_list = []
+    uids.each do |uid|
+      user_list << get_passwd_uid_response(User.find(uid).uid)
+    end
+    user_list
+  end
+
   def update_profile(attrs)
     self.public_key = attrs['public_key'].blank? ? self.public_key : attrs['public_key']
     self.name = attrs['name'].blank? ? self.name : attrs['name']
@@ -39,6 +53,12 @@ class User < ActiveRecord::Base
     self.uid = id + UID_CONSTANT
     self.user_login_id = self.email.split("@").first
     self.save!
+  end
+
+  def purge!
+    if !self.active
+      self.group_associations.each{ |g| g.destroy }
+    end
   end
 
   def self.includes_restricted_characters? input_string
@@ -142,7 +162,7 @@ class User < ActiveRecord::Base
 
   def permitted_vpns? address_array
     address_array.each do |host_address|
-      vpns.each do |vpn|
+      Vpn.user_vpns(self).each do |vpn|
         return true if vpn.ip_address == host_address
       end
     end
@@ -194,7 +214,7 @@ class User < ActiveRecord::Base
     return false if !user.active
 
     user_key = "#{user.id}:#{Time.now.hour}"
-      request_count = REDIS_CACHE.incrby user_key, 1
+    request_count = REDIS_CACHE.incrby user_key, 1
     REDIS_CACHE.expire user_key, 3600
     return false if request_count > RATE_LIMIT
     token == ROTP::TOTP.new(user.auth_key).now
@@ -276,13 +296,13 @@ class User < ActiveRecord::Base
   end
 
   def reset_login_limit
-     user_key = "#{self.id}:#{Time.now.hour}"
-     REDIS_CACHE.set user_key, 0
+    user_key = "#{self.id}:#{Time.now.hour}"
+    REDIS_CACHE.set user_key, 0
   end
-  
+
   def within_limits?
     user_key = "#{self.id}:#{Time.now.hour}"
-      request_count = REDIS_CACHE.incrby user_key, 1
+    request_count = REDIS_CACHE.incrby user_key, 1
     REDIS_CACHE.expire user_key, 3600
     request_count < RATE_LIMIT
   end
@@ -300,7 +320,7 @@ class User < ActiveRecord::Base
     address_array = addresses.split
 
     user = User.get_user user_name
-    if user.permitted_hosts?(address_array) || user.permitted_vpns?(address_array)
+    if user.present? && user.permitted_vpns?(address_array)
       drift_interval = 30
       t = Time.now
       otps = []
@@ -330,11 +350,21 @@ class User < ActiveRecord::Base
     user_hash[:pw_gid] = groups.where(name: user_login_id).first.gid if groups.where(name: user_login_id).count > 0
     user_hash[:pw_gecos]  = "#{name}"
     user_hash[:pw_dir] = "#{HOME_DIR}/#{user_login_id}"
-      user_hash[:pw_shell] = "/bin/bash"
+    user_hash[:pw_shell] = "/bin/bash"
     user_hash
   end
 
   def group_admin?
     GroupAdmin.find_by_user_id(self.id).present?
+  end
+
+  private 
+
+  def stamp_deactivation_time
+    if self.active
+      self.update_column(:deactivated_at, nil)
+    else
+      self.update_column(:deactivated_at, DateTime.current) unless self.deactivated_at
+    end
   end
 end

@@ -1,0 +1,33 @@
+.container-fluid.col-md-8
+  - if notice.present?
+    .alert.alert-primary role="alert"
+      #notice
+        = notice
+
+
+  h4 API Keys
+
+  table.table.responsive
+    thead
+      tr
+        th Name
+        th Description
+        th Access key
+        th Owner
+        th Access Group
+        th
+
+    tbody
+      - @api_resources.each do |api_resource|
+        tr
+          td = api_resource.name
+          td = api_resource.description
+          td = link_to 'Regenerate', regenerate_access_key_api_resource_path(api_resource), data: { confirm: 'Are you sure?' }
+          td = link_to api_resource.user.name, api_resource.user if api_resource.user.present?
+          td = link_to api_resource.group.name, api_resource.group if api_resource.group.present?
+          td = link_to 'Destroy', api_resource, data: { confirm: 'Are you sure?' }, method: :delete
+
+  br
+
+javascript:
+  $("#apiresource-index").addClass("active");

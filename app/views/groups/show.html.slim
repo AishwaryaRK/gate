@@ -19,13 +19,49 @@
                 .col
                   =  "#{admin.user.try(:name)}"
                 .col 
-                  - if (current_user.admin? or @group.admin?(current_user) ) and current_user.id != admin.user.id
-                    = link_to "Remove?", [@group, admin], method: :delete, data: {confirm: "Are you sure to remove #{admin.user.name} ?"} 
+                  - if (current_user.admin? or @group.admin?(current_user) ) and current_user.id != admin.user.try(:id)
+                    = link_to "Remove?", [@group, admin], method: :delete, data: {confirm: "Are you sure to remove #{admin.user.try(:name)} ?"} 
           .row
             .col
-              = select_tag "user_id", options_from_collection_for_select(@users.sort_by { |user| user.name }, "id", "name", @group_admin_id), include_blank: true, class: "form-control"
+              = text_field_tag "user_id", "", id: "assign_admin_user_id", class: "form-control"
             .col
-              = submit_tag "Assign admin", class: "form-control btn-md btn-primary"
+              = submit_tag "Assign admin", class: "form-control btn btn-md btn-primary", disabled: true
+  a name="group_members"
+  br
+  .card
+    .card-body
+      h6.card-title Groups Members (#{@group.users.count})
+      .table-responsive
+        table.table.table-striped
+          thead
+            tr
+              th User Details
+              th Email address
+              th
+          tbody
+            - @group.users.sort_by{ |user| user.email}.select{|user| user.active}.each do |user|
+              tr
+                td
+                  = link_to "#{user.name}", user_path(user)
+                td
+                  = "#{user.email}"
+                td
+                  = link_to "Delete", [@group, user], method: :delete, data: {confirm: 'Are you sure to remove this user from the group?'} if current_user.admin or @group.admin?(current_user)
+
+      br
+      = "*This group does not have any group members" if @group.users.count == 0
+      br
+      - if current_user.admin? || current_user.group_admin?
+        = form_tag  add_user_to_group_path, method: :post do
+          .row
+            .col
+              | Assign members
+            .col
+            .col
+              = text_field_tag "user_id", "", id: "add_user_user_id", class: "form-control"
+            .col
+              = submit_tag "Add User", class: "form-control btn-md btn-primary", disabled: true
+
   br
   .card
     .card-body
@@ -39,7 +75,7 @@
               th Vpn Host name
               th
           tbody
-            - @group.vpns.sort_by{ |vpn| vpn.name}.each do |vpn|
+            - @group.vpns.sort_by{ |vpn| vpn.name}.uniq{|vpn| vpn.id}.each do |vpn|
               tr
                 td
                   = link_to "#{vpn.name}", vpn_path(vpn)
@@ -60,44 +96,9 @@
               | Assign VPNs
             .col
             .col
-              = select_tag "vpn_id", options_from_collection_for_select(@vpns.sort_by { |vpn| vpn.name }, "id", "name"), include_blank: true, class: "form-control"
+              = text_field_tag "vpn_id", "", id: "add_vpn_vpn_id", class: "form-control"
             .col
-              = submit_tag "Add Vpn", class: "form-control btn-md btn-primary"
-  a name="group_members"
-  br
-    .card
-      .card-body
-        h6.card-title Groups Members
-        .table-responsive
-          table.table.table-striped
-            thead
-              tr
-                th User Details
-                th Email address
-                th
-            tbody
-              - @group.users.sort_by{ |user| user.email}.each do |user|
-                tr
-                  td
-                    = link_to "#{user.name}", user_path(user)
-                  td
-                    = "#{user.email}"
-                  td
-                    = link_to "Delete", [@group, user], method: :delete, data: {confirm: 'Are you sure to remove this user from the group?'}
-
-        br
-        = "*This group does not have any group members" if @group.users.count == 0
-        br
-        - if current_user.admin? || current_user.group_admin?
-          = form_tag  add_user_to_group_path, method: :post do
-            .row
-              .col
-                | Assign members
-              .col
-              .col
-                = select_tag "user_id", options_from_collection_for_select(@users.sort_by { |user| user.name }, "id", "name"), include_blank: true, class: "form-control"
-              .col
-                = submit_tag "Add User", class: "form-control btn-md btn-primary"
+              = submit_tag "Add Vpn", class: "form-control btn-md btn-primary", disabled: true
   br
   .card
     .card-body
@@ -126,9 +127,9 @@
               | Assign Hosts
             .col
             .col
-              = select_tag "machine_id", options_from_collection_for_select(@host_machines.sort_by { |machine| machine.name}, "id", "name"), class: "form-control"
+              = text_field_tag "machine_id", "", id: "add_machine_machine_id", class: "form-control"
             .col
-              = submit_tag "Add Host", class: "form-control btn-md btn-primary"
+              = submit_tag "Add Host", class: "form-control btn-md btn-primary", disabled: true
 
 javascript:
   $("#group-index").addClass("active");

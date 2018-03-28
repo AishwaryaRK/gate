@@ -6,6 +6,12 @@ class HostMachine < ActiveRecord::Base
   validates_uniqueness_of :name, case_sensitive: false
 
   before_create :set_lower_case_name
+  before_save :set_host_access_key
+  before_create :set_host_access_key
+
+  def set_host_access_key
+    self.access_key = ROTP::Base32.random_base32 
+  end
 
   def set_lower_case_name
     self.name = self.name.downcase
@@ -21,10 +27,10 @@ class HostMachine < ActiveRecord::Base
   end
 
   def sysadmins
-    users = []
-    groups.each do |group|
-      users = users + group.users.collect{|u| u.id}
-    end
+    users = GroupAssociation.
+      joins(:user).
+      where("group_id IN (?)", groups.collect(&:id)).
+      collect(&:user_id)
     users.uniq
   end
 
