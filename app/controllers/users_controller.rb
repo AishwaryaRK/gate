@@ -1,7 +1,7 @@
 class UsersController < ApplicationController
   before_action :set_paper_trail_whodunnit
 
-  before_filter :authenticate_user!, :except => [:user_id, :verify, :authenticate, :authenticate_cas, :authenticate_ms_chap, :authenticate_pam, :public_key] 
+  before_action :authenticate_user!, :except => [:user_id, :verify, :authenticate, :authenticate_cas, :authenticate_ms_chap, :authenticate_pam, :public_key]
 
   def index
     @user_search = params[:user_search]
@@ -33,7 +33,31 @@ class UsersController < ApplicationController
     end
   end
 
+  def new
+    if current_user.admin
+      render :new, locals: {
+          roles: Figaro.env.user_roles.split(','),
+          domains: Figaro.env.gate_hosted_domains.split(','),
+      }
+    else
+      redirect_to profile_path
+    end
+  end
+
   def create
+    user = User.add_user(
+        user_params[:first_name],
+        user_params[:last_name],
+        user_params[:user_role],
+        params[:user_domain]
+    )
+    if user.errors.present?
+      flash[:errors] = user.errors.full_messages
+      redirect_to(new_user_path)
+    else
+      flash[:success] = 'Successfully Created User'
+      redirect_to user_path(id: user.id)
+    end
   end
 
   def update
@@ -51,9 +75,11 @@ class UsersController < ApplicationController
   def search
     @users = User.
       where("name LIKE :q OR email LIKE :q", q: "%#{params[:q]}%").
-      where(active: true).
       order("name ASC").
       limit(20)
+    unless params[:include_inactive] == 'true'
+      @users = @users.where(active: true)
+    end
     data = @users.map{ |user| {
       id: user.id,
       name: user.name,
@@ -66,20 +92,34 @@ class UsersController < ApplicationController
   # GET /users/:id/regenerate_token
   def regenerate_token
     @user = User.find(params[:id])
-    @access_token = @user.access_token
-    @access_token.token = ROTP::Base32.random_base32
-    respond_to do |format|
-      if @access_token.save
-        format.html { redirect_to user_path(@user.id), notice: 'Token regenerated.', flash: {token: @access_token.token} }
-        format.json { render :show, status: :ok, location: @user }
-      else
-        format.html { redirect_to user_path(@user.id), notice: 'Token failed to regenerate.' }
-        format.json { render json: @user.errors, status: :unprocessable_entity }
+
+    if (current_user.admin? or (current_user.id == @user.id))
+      @access_token = @user.access_token
+      @access_token.token = ROTP::Base32.random_base32
+      respond_to do |format|
+        if @access_token.save
+          format.html { redirect_to user_path(@user.id), notice: 'Token regenerated.', flash: {token: @access_token.token} }
+          format.json { render :show, status: :ok, location: @user }
+        else
+          format.html { redirect_to user_path(@user.id), notice: 'Token failed to regenerate.' }
+          format.json { render json: @user.errors, status: :unprocessable_entity }
+        end
+      end
+    else
+      respond_to do |format|
+        format.html { redirect_to user_path(@user.id), notice: 'You cannot regenerate this token.' }
+        format.json { render json: @user.errors, status: :unauthorized }
       end
     end
   end
 
   private
+  def user_params
+    params.require(:user).permit(
+        :first_name, :last_name, :user_role
+    )
+  end
+
   def form_response(message)
     respond_to do |format|
       format.html { redirect_to user_path, notice: message }

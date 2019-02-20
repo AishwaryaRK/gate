@@ -1,0 +1,39 @@
+.container.col-md-8
+  .row.mb-3.mt-2
+    .col-md-8
+      h5 Organisations
+    .col-md-4.text-right
+      = link_to "New Organisation", new_organisation_path, class: "btn btn-primary", id: 'new_organisation_btn'
+  - if flash.key?(:success)
+    .alert.alert-success#organisation_form_success
+      = flash[:success]
+  - if flash.key?(:errors)
+    .alert.alert-danger#organisation_form_errors
+      = flash[:errors]
+  #organisation_list.table-responsive
+    table.table.table-striped
+      thead
+        tr
+          th Name
+          th URL
+          th Email Domain
+          th Actions
+      tbody
+        - if org_list.present?
+          - org_list.each do |org|
+            tr
+              td = link_to org.name, organisation_path(org)
+              td = link_to org.website, org.website
+              td = org.domain
+              td
+                - if org.saml_setup?
+                  .dropdown.position-relative#configureAppDropDownMenuContainer
+                    button.btn.btn-primary.btn-sm.dropdown-toggle type="button" id="configureAppDropDownMenu" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-boundary="configureAppDropDownMenuContainer"
+                      = "Configure App"
+                    .dropdown-menu aria-labelledby="configureAppDropDownMenu"
+                      = link_to "Datadog", organisation_config_saml_app_path(organisation_id: org.id, app_name: 'datadog'), class: 'dropdown-item'
+                - else
+                  = link_to "Setup SAML", organisation_setup_saml_path(org)
+        - else
+          td.text-center colspan='3'
+            p There are no organisations yet, why don't you create an organisation

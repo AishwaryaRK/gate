@@ -2,22 +2,16 @@ class ProfileController < ApplicationController
   require 'vpn/mobileconfig'
 
   before_action :set_paper_trail_whodunnit
-  skip_before_filter :verify_authenticity_token, :if => Proc.new { |c| c.request.format == 'application/json' }
-  before_filter :authenticate_user!, :except => [:user_id, :verify, :authenticate, :authenticate_cas, :authenticate_ms_chap, :authenticate_pam, :public_key] unless Rails.env.development?
-  prepend_before_filter :setup_user if Rails.env.development?
+  skip_before_action :verify_authenticity_token, :if => Proc.new { |c| c.request.format == 'application/json' }
+  before_action :authenticate_user!, :except => [:user_id, :verify, :authenticate, :authenticate_cas, :authenticate_ms_chap, :authenticate_pam, :public_key] unless Rails.env.development?
+  prepend_before_action :setup_user if Rails.env.development?
 
   def regen_auth
-    @user = current_user
-    @user.auth_key = ROTP::Base32.random_base32
-    totp = ROTP::TOTP.new(@user.auth_key)
-    @user.provisioning_uri = totp.provisioning_uri @user.email
-    @user.save!
+    current_user.generate_two_factor_auth(true)
     redirect_to profile_path
   end
 
-  def show
-
-  end
+  def show; end
 
   def user_admin
     @users = []
@@ -66,7 +60,7 @@ class ProfileController < ApplicationController
       user = User.get_user(params[:name])
       response = user.uid if user.present?
     end
-    render text: response
+    render plain: response
   end
 
   def download_vpn
@@ -96,32 +90,33 @@ class ProfileController < ApplicationController
   def authenticate
     response = User.authenticate params
     if response
-      render text: 0
+      render plain: 0
     else
-      render text: 1
+      render plain: 1
     end
   end
 
   def authenticate_ms_chap
     response = User.ms_chap_auth params
-    render text: response
+    render plain: response
   end
 
 
   def authenticate_cas
-
     username = User.authenticate_cas request.env["HTTP_AUTHORIZATION"]
+    user = User.find_by(user_login_id: username)
 
-    ## cas-5.1.x expects {"@c":".SimplePrincipal","id":"casuser","attributes":{}}
+    ## cas-5.2.x expects {"@c":".SimplePrincipal","id":"casuser","attributes":{}}
     response_map = {
-      "@class":"org.apereo.cas.authentication.principal.SimplePrincipal",
-      "id" => username,
-      "attributes": {"backend": "gate-sso"}
+      '@class':'org.apereo.cas.authentication.principal.SimplePrincipal',
+      'id' => username,
+      'attributes': {'backend': 'gate-sso'},
     }
 
     if username.present?
       render json: response_map, status: :ok
     else
+      response_map['attributes'] = nil
       render json: response_map, status: 401
     end
   end
@@ -129,9 +124,9 @@ class ProfileController < ApplicationController
   def authenticate_pam
     response = User.authenticate_pam params
     if response
-      render text: 0
+      render plain: 0
     else
-      render text: 1
+      render plain: 1
     end
   end
 
@@ -140,12 +135,12 @@ class ProfileController < ApplicationController
     if token
       response = User.verify params
       if response
-        render text: 0
+        render plain: 0
       else
-        render text: 1
+        render plain: 1
       end
     else
-      render text: 1
+      render plain: 1
     end
   end
 
@@ -186,10 +181,7 @@ class ProfileController < ApplicationController
     redirect_to user_path
   end
 
-  def user_edit
-
-
-  end
+  def user_edit; end
 
   def public_key_update
     @user = User.where(id: params[:id]).first
@@ -204,7 +196,7 @@ class ProfileController < ApplicationController
     public_key = ''
     @user = User.get_user(params[:name])
     public_key = @user.public_key if @user.present?
-    render text: public_key
+    render plain: public_key
   end
 
   def user

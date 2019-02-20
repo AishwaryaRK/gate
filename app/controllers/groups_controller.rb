@@ -3,7 +3,7 @@ class GroupsController < ApplicationController
   before_action :set_group, only: [:show, :edit, :update, :destroy, :add_user, :add_machine, :add_vpn, :add_admin, :remove_admin, :delete_user, :delete_vpn, :delete_machine]
   before_action :authenticate_user!
 
-  prepend_before_filter :setup_user if Rails.env.development?
+  prepend_before_action :setup_user if Rails.env.development?
 
   def index
     @groups = []
@@ -60,6 +60,7 @@ class GroupsController < ApplicationController
 
       if @user.email.split('@').first != @group.name
         @user.groups.delete(@group)
+        @group.burst_host_cache
       end
 
     end
@@ -71,7 +72,7 @@ class GroupsController < ApplicationController
       user = User.find(params[:user_id])
       user.groups << @group if user.present? and user.groups.find_by_id(@group.id).blank?
       user.save!
-
+      @group.burst_host_cache
     end
 
     respond_to do |format|
@@ -96,7 +97,7 @@ class GroupsController < ApplicationController
   end
 
   def add_admin
-    if current_user.admin? or @group.admin?(current_user)
+    if current_user.admin?
       GroupAdmin.find_or_create_by(group_id: @group.id, user_id: params[:user_id])
     end
 
@@ -108,7 +109,7 @@ class GroupsController < ApplicationController
   end
 
   def remove_admin
-    if current_user.admin? or  @group.admin?(current_user)
+    if current_user.admin?
       GroupAdmin.delete(params[:group_admin_id])
     end
 
@@ -144,19 +145,19 @@ class GroupsController < ApplicationController
       end
     end
   end
-  def add_group    
+  def add_group
     @user = User.find(params[:id])
     if current_user.admin?
 
       @group = Group.find(params[:group_id])
       @user.groups << @group if @user.groups.find_by_id(params[:group_id]).blank?
-      @user.save! 
+      @user.save!
 
     end
     redirect_to user_path
   end
 
-  def delete_group  
+  def delete_group
     @user = User.find(params[:user_id])
     if current_user.admin?
       group = Group.find(params[:id])

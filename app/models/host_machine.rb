@@ -1,16 +1,16 @@
-class HostMachine < ActiveRecord::Base
+class HostMachine < ApplicationRecord
   has_paper_trail
 
   has_many :host_access_groups
   has_many :groups, through: :host_access_groups
   validates_uniqueness_of :name, case_sensitive: false
+  validates :name, presence: true
 
   before_create :set_lower_case_name
-  before_save :set_host_access_key
   before_create :set_host_access_key
 
   def set_host_access_key
-    self.access_key = ROTP::Base32.random_base32 
+    self.access_key = ROTP::Base32.random_base32
   end
 
   def set_lower_case_name
@@ -28,10 +28,27 @@ class HostMachine < ActiveRecord::Base
 
   def sysadmins
     users = GroupAssociation.
+      select(:user_id).
+      distinct.
       joins(:user).
       where("group_id IN (?)", groups.collect(&:id)).
       collect(&:user_id)
-    users.uniq
   end
 
+  def add_host_group(name)
+    name = name.squish
+    if name.present?
+      name = "#{name}_host_group"
+      self.add_group(name.downcase)
+    end
+  end
+
+  def add_group(name)
+    name = name.squish
+    if name.present?
+      group =  Group.find_or_initialize_by(name: name.downcase)
+      self.groups << group unless self.groups.include? group
+      self.save
+    end
+  end
 end

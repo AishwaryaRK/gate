@@ -1,7 +1,24 @@
 Rails.application.routes.draw do
   devise_for :users, :controllers => { :omniauth_callbacks => "users/omniauth_callbacks" }, :path_names => { :sign_in => 'login', :sign_out => 'logout' }
 
+  scope '/:slug/:app/saml' do
+    get '/auth' => 'saml_idp#new'
+    get '/metadata' => 'saml_idp#show'
+    post '/auth' => 'saml_idp#create'
+    match '/logout' => 'saml_idp#logout', via: [:get, :post, :delete]
+  end
+
   devise_scope :user do
+    authenticated :user do
+      resources :organisations, except: %i(destroy) do
+        get 'setup_saml', action: :setup_saml
+        get 'config_saml_app/:app_name', action: :config_saml_app, as: 'config_saml_app'
+        post 'config_saml_app/:app_name', action: :save_config_saml_app, as: :save_config_saml_app
+        post 'config_saml_app/:app_name/add_user', action: :add_user_saml_app, as: :add_user_saml_app
+        delete 'config_saml_app/:app_name', action: :remove_user_saml_app, as: :remove_user_saml_app
+      end
+    end
+
     delete "/users/sign_out" => "devise/sessions#destroy"
     match 'download_vpn', to: 'profile#download_vpn', via: :get, format: :html
     match 'download_vpn_for_ios_and_mac', to: 'profile#download_vpn_for_ios_and_mac', via: :get, format: :html
@@ -65,6 +82,13 @@ Rails.application.routes.draw do
       post 'users' => 'users#create', as: 'add_users_api', format: :json
       get 'users/profile' => 'users#show', format: :json, :constraints => { format: 'json' }
       post 'users/profile' => 'users#update', format: :json, :constraints => { format: 'json' }
+
+      resources :groups, only: [:create], format: :json
+      resources :vpns, only: [:create], format: :json do
+        member do
+          post 'assign_group'
+        end
+      end
     end
   end
 

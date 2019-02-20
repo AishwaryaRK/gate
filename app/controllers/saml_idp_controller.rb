@@ -1,99 +1,63 @@
 class SamlIdpController < SamlIdp::IdpController
-  before_filter :is_saml_enabled, :except => [:add_saml_sp, :get_saml_sp]
-  before_filter :authenticate_user!, :except => [:create, :add_saml_sp, :get_saml_sp] unless Rails.env.development?
+  layout false
+  before_action :setup_saml_configuration
 
   def show
-    if current_user.admin?
-      render xml: SamlIdp.metadata.signed
+    xml_content = SamlIdp.metadata.signed
+    if params.key?(:download)
+      send_data xml_content,
+        type: 'text/xml',
+        filename: 'metadata.xml'
     else
-      respond_to do |format|
-        format.html {render :file => "#{Rails.root}/public/404", :layout => false, :status => :not_found}
-        format.xml {head :not_found}
-        format.any {head :not_found}
-      end
+      render xml: xml_content
     end
   end
 
-  def create
-    unless params[:email].blank? && params[:password].blank?
-      person = idp_authenticate(params[:email], params[:password])
-      if person.nil?
-        @saml_idp_fail_msg = "Incorrect email or password."
-      else
-        @saml_response = idp_make_saml_response(person)
-        render :template => "saml_idp/idp/saml_post", :layout => false
-        return
-      end
-    end
-    render :template => "saml_idp/new"
-  end
+  private
 
-  def idp_authenticate(username, token)
-    if User.find_and_check_user username, token
-      return User.get_user(username)
-    end
-    return false
+  def idp_authenticate(email, password)
+    user = User.find_and_validate_saml_user(email, password, params[:app])
+    user.present? ? user : nil
   end
-
-  private :idp_authenticate
 
   def idp_make_saml_response(found_user)
     encode_response found_user
   end
 
-  private :idp_make_saml_response
-
-  def add_saml_sp
-    if AccessToken.valid_token(params[:access_token])
-      @sp = SamlServiceProvider.find_or_create_by(:name => params[:name], :sso_url => params[:sso_url], :metadata_url => params[:metadata_url])
-      update_saml_idp_config
-      render json: @sp, status: :ok
-    else
-      render json: {"error": "Unauthorized user"}, status: :unauthorized
-    end
+  def idp_logout
+    # user = User.by_email(saml_request.name_id)
+    # user.logout
   end
 
-  def update_saml_idp_config
+  def setup_saml_configuration
+    slug = params[:slug]
+    app = params[:app]
+    org = Organisation.find_by_slug(slug)
+    saml_url = "#{Figaro.env.gate_url}#{slug}/#{app}/saml"
     SamlIdp.configure do |config|
-      service_providers = {}
-      SamlServiceProvider.find_each do |sp|
-        service_providers[sp.sso_url] = {
-            :fingerprint => Figaro.env.GATE_SAML_IDP_FINGERPRINT,
-            :metadata_url => sp.metadata_url
-        }
-      end
-      config.service_provider.finder = ->(issuer_or_entity_id) do
-        service_providers[issuer_or_entity_id]
-      end
+      config.x509_certificate = org.cert_key
+      config.secret_key = org.cert_private_key
+      config.organization_name = org.name
+      config.organization_url = org.website
+      config.base_saml_location = saml_url
+      config.session_expiry = 86400
+      config.name_id.formats = {
+        email_address: ->(principal) { principal.email },
+        transient: ->(principal) { principal.user_login_id },
+        persistent: ->(principal) { principal.user_login_id },
+        name: ->(principal) { principal.name },
+      }
+      config.attributes = {
+        'eduPersonPrincipalName' => {
+          'name' => 'urn:oid:1.3.6.1.4.1.5923.1.1.1.6',
+          'name_format' => 'urn:oasis:names:tc:SAML:2.0:attrname-format:uri',
+          'getter' => ->(principal) { principal.email },
+        },
+      }
+      config.attribute_service_location = "#{saml_url}/attributes"
+      config.single_service_post_location = "#{saml_url}/auth"
+      config.single_logout_service_post_location = "#{saml_url}/logout"
+      config.single_logout_service_redirect_location = "#{saml_url}/logout"
     end
   end
-
-  private :update_saml_idp_config
-
-  def get_saml_sp
-    if AccessToken.valid_token(params[:access_token])
-      @sp = SamlServiceProvider.where(name: params[:name]).first
-      if @sp
-        render json: @sp, status: :ok
-      else
-        render json: {"error": "service provider with name #{params[:name]} not found"}, status: :not_found
-      end
-    else
-      render json: {"error": "Unauthorized user"}, status: :unauthorized
-    end
-  end
-
-  def is_saml_enabled
-    if Figaro.env.ENABLE_SAML
-      return true
-    else
-      respond_to do |format|
-        format.html {render :file => "#{Rails.root}/public/saml_not_enabled", :layout => false, :status => :not_found}
-        format.xml {head :not_found}
-        format.any {head :not_found}
-      end
-    end
-  end
-
-  private :is_saml_enabled
 end

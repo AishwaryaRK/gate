@@ -1,8 +1,8 @@
 class HostMachinesController < ApplicationController
   before_action :set_paper_trail_whodunnit
   before_action :set_host_machine, only: [:add_group, :show, :edit, :update, :destroy, :delete_group]
-  prepend_before_filter :setup_user if Rails.env.development?
-  before_filter :authenticate_user!
+  prepend_before_action :setup_user if Rails.env.development?
+  before_action :authenticate_user!
   def index
     @title = "Host"
     @host_machines = HostMachine.all
@@ -33,6 +33,11 @@ class HostMachinesController < ApplicationController
   def show
     @machine = @host_machine
     @groups = Group.all
+  end
+
+  def update
+    @host_machine.update(default_admins: params[:host_machine][:default_admins])
+    redirect_to host_machine_path @host_machine
   end
 
   def add_group

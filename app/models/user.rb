@@ -1,58 +1,121 @@
-class User < ActiveRecord::Base
+class User < ApplicationRecord
   has_paper_trail
 
   include MsChapAuth
-  # Include default devise modules. Others available are:
-  # :confirmable, :lockable, :timeoutable and :omniauthable
-  #devise :database_authenticatable, :registerable,
-  #  :recoverable, :rememberable, :trackable, :validatable, :omniauthable
-  devise :timeoutable, :omniauthable, :omniauth_providers => [:google_oauth2]
+  devise :timeoutable, :omniauthable, omniauth_providers: [:google_oauth2]
   has_many :hosts
-
   has_many :group_associations
   has_many :groups, through: :group_associations
-
-  #has_many :vpn_group_user_associations
-  #has_many :vpns, through: :vpn_group_user_associations
-
   has_many :group_admin, dependent: :destroy
-  #belongs_to :vpn
-
   has_one :access_token
 
-  #we should put this in configuration
-  ##TODO move this to environemnt variable or configuration
-  #
-  after_create :add_system_attributes
-  UID_CONSTANT = 5000
-  HOME_DIR = "/home"
-  USER_SHELL = "/bin/bash"
+  # TODO: Need to add the validations for the user model, right now a lot of tests fail due to enabling this
+  # validates :first_name, :last_name, :mobile, :user_role, presence: true
+  # validates :first_name, :last_name, format: { with: /[a-zA-Z]/}, allow_blank: true
+  # validates :user_role, inclusion: { in: Figaro.env.user_roles.split(',') }
+  # validate :validate_email_domain
+  validates :email, uniqueness: true
 
-  after_save :stamp_deactivation_time
+  validate :remove_default_admin, on: :update
+
+  HOME_DIR = '/home'.freeze
+  USER_SHELL = '/bin/bash'.freeze
+
+  def self.add_user(first_name, last_name, user_role, domain)
+    user = User.new(first_name: first_name, last_name: last_name, user_role: user_role)
+    user.assign_attributes(
+      user_login_id: "#{first_name.downcase}.#{last_name.downcase}",
+      uid: user.generate_uid,
+      email: "#{first_name.downcase}.#{last_name.downcase}@#{domain}",
+      name: "#{first_name} #{last_name}"
+    )
+    user.save
+    user.initialise_host_and_group if user.persisted?
+    user
+  end
+
+  def generate_login_id
+    email.split('@').first
+  end
+
+  def generate_uid(uid_buffer = 5000)
+    uid_buffer = Figaro.env.uid_buffer.present? ? Figaro.env.uid_buffer.to_i : uid_buffer
+    User.last.blank? ? uid_buffer : User.last.id.to_i + uid_buffer
+  end
+
+  def initialise_host_and_group
+    host = Host.find_or_initialize_by(user: self)
+    unless Figaro.env.default_host_pattern.blank?
+      host.host_pattern = Figaro.env.default_host_pattern
+    end
+    hosts << host
+    groups << Group.find_or_initialize_by(name: user_login_id)
+  end
+
+  def generate_two_factor_auth(force_create = false)
+    if persisted? && (force_create || (!force_create && auth_key.blank?))
+      self.auth_key = ROTP::Base32.random_base32
+      totp = ROTP::TOTP.new(auth_key)
+      self.provisioning_uri = totp.provisioning_uri "GoJek-C #{email}"
+      save!
+    end
+  end
+
+  def self.create_user(name, email)
+    user = User.find_or_initialize_by(email: email)
+    unless user.persisted?
+      user.assign_attributes(
+        name: name, user_login_id: user.generate_login_id, uid: user.generate_uid
+      )
+      user.admin = User.first.blank?
+      user.initialise_host_and_group
+      user.save! if user.valid?
+    end
+    user
+  end
+
+  def self.add_temp_user(name, email)
+    email += "@#{Figaro.env.gate_hosted_domain}"
+    user = User.create_user(name, email)
+    user.generate_two_factor_auth
+    user.auth_key
+  end
+
+  def update_profile(attrs = {})
+    allowed_keys = %w(public_key name product_name admin active)
+    attrs = attrs.stringify_keys
+    attrs = attrs.select { |k, v| allowed_keys.include?(k) && (v.present? || v.eql?(false)) }
+    assign_attributes(attrs)
+    if active.eql?(false) && deactivated_at.blank?
+      self.deactivated_at = Time.current
+    end
+    save! if valid?
+  end
 
   def name_email
     "#{name} (#{email})"
   end
 
-  def self.get_sysadmins uids
-    user_list = []
-    uids.each do |uid|
-      user_list << get_passwd_uid_response(User.find(uid).uid)
-    end
+  def self.get_sysadmins user_ids
+    users = User.
+      select(%Q(
+        id,
+        name,
+        uid,
+        user_login_id,
+        (
+          SELECT gid
+          FROM groups
+          INNER JOIN group_associations
+            ON groups.id = group_associations.group_id
+          WHERE group_associations.user_id = users.id
+          AND groups.name = users.user_login_id
+          LIMIT 1
+        ) AS gid
+      )).
+      where(id: user_ids)
+    user_list = users.map{ |user| get_passwd_uid_response(user) }
     user_list
-  end
-
-  def update_profile(attrs)
-    self.public_key = attrs['public_key'].blank? ? self.public_key : attrs['public_key']
-    self.name = attrs['name'].blank? ? self.name : attrs['name']
-    self.product_name = attrs['product_name'].blank? ? self.product_name : attrs['product_name']
-    self.save!
-  end
-
-  def add_system_attributes
-    self.uid = id + UID_CONSTANT
-    self.user_login_id = self.email.split("@").first
-    self.save!
   end
 
   def purge!
@@ -78,55 +141,9 @@ class User < ActiveRecord::Base
     !includes_restricted_characters?(email_address) && email_address.split("@").count == 2 ? true : false
   end
 
-  def self.add_temp_user (name, email)
-    email = email + "@" + Figaro.env.GATE_HOSTED_DOMAIN
-    user = User.create(name:name, email: email)
-    host = Host.new
-    host.user = user
-    host.host_pattern = "s*" #by default give host access to all staging instances
-    host.save!
-
-
-    #Add user to default user's group
-    group = Group.create(name: user.user_login_id)
-    user.groups << group
-    user.save!
-
-    if user.persisted? and user.auth_key.blank?
-      user.auth_key = ROTP::Base32.random_base32
-      totp = ROTP::TOTP.new(user.auth_key)
-      user.provisioning_uri = totp.provisioning_uri "GoJek-C #{name}"
-      user.save!
-    end
-    user.auth_key
-  end
-
   def self.valid_domain? domain
     hosted_domains = Figaro.env.GATE_HOSTED_DOMAINS.split(",")
     hosted_domains.include?(domain)
-  end
-
-  def self.from_omniauth(access_token)
-    data = access_token.info
-    user = User.where(:email => data["email"]).first
-
-    # Uncomment the section below if you want users to be created if they don't exist
-    unless user
-      user = User.create(name: data["name"],
-                         email: data["email"]
-                        )
-      host = Host.new
-      host.user = user
-      host.host_pattern = "s*" #by default give host access to all staging instances
-      host.save!
-
-
-      #Add user to default user's group
-      group = Group.create(name: user.user_login_id)
-      user.groups << group
-      user.save!
-    end
-    user
   end
 
   def self.verify params
@@ -208,11 +225,28 @@ class User < ActiveRecord::Base
     return User.where(user_login_id: user_login_id, active: true).first
   end
 
+  def self.find_and_validate_saml_user(email, password, app_name)
+    query = 'users.email = ? and users.active = ? and groups.name = ?'
+    users = User.joins(:groups).where(query, email, true, app_name)
+    if users.present?
+      users.first.valid_otp?(password) ? users.first : false
+    else
+      false
+    end
+  end
+
+  def valid_otp?(password)
+    user_key = "#{id}:#{Time.now.hour}"
+    request_count = REDIS_CACHE.incrby user_key, 1
+    REDIS_CACHE.expire user_key, 3600
+    return false if request_count > RATE_LIMIT
+    password.eql?(ROTP::TOTP.new(self.auth_key).now)
+  end
+
   def self.find_and_check_user email, token
     user = User.get_user email
     return false if user.blank?
     return false if !user.active
-
     user_key = "#{user.id}:#{Time.now.hour}"
     request_count = REDIS_CACHE.incrby user_key, 1
     REDIS_CACHE.expire user_key, 3600
@@ -221,12 +255,9 @@ class User < ActiveRecord::Base
   end
 
   def self.get_user_pass_attributes params
-    token = params[:token]
-    email = params[:email]
-    email = params[:user] if email.blank?
-    token = params[:password] if token.blank?
-
-    return [null, null] if email.blank? || token.blank?
+    token = params[:token].present? ? params[:token] : params[:password]
+    email = params[:email].present? ? params[:email] : params[:user]
+    return [nil, nil] if email.blank? || token.blank?
     [email, token]
   end
 
@@ -280,9 +311,7 @@ class User < ActiveRecord::Base
     user_response
   end
 
-
-  def self.get_passwd_uid_response uid
-    user = User.where(uid: uid).first
+  def self.get_passwd_uid_response user
     return [] if user.blank?
     user.user_passwd_response
   end
@@ -347,7 +376,14 @@ class User < ActiveRecord::Base
     user_hash[:pw_name] = user_login_id
     user_hash[:pw_passwd]  = "x"
     user_hash[:pw_uid] = uid.to_i
-    user_hash[:pw_gid] = groups.where(name: user_login_id).first.gid if groups.where(name: user_login_id).count > 0
+
+    # If gid is supplied (avoid N+1)
+    if self.respond_to?(:gid) && gid
+      user_hash[:pw_gid] = gid.to_i
+    else
+      user_hash[:pw_gid] = groups.where(name: user_login_id).first.gid if groups.where(name: user_login_id).count > 0
+    end
+
     user_hash[:pw_gecos]  = "#{name}"
     user_hash[:pw_dir] = "#{HOME_DIR}/#{user_login_id}"
     user_hash[:pw_shell] = "/bin/bash"
@@ -358,13 +394,18 @@ class User < ActiveRecord::Base
     GroupAdmin.find_by_user_id(self.id).present?
   end
 
-  private 
+  private
 
-  def stamp_deactivation_time
-    if self.active
-      self.update_column(:deactivated_at, nil)
-    else
-      self.update_column(:deactivated_at, DateTime.current) unless self.deactivated_at
+  def remove_default_admin
+    admin_users = User.where('active = ? and admin = ? and id <> ?', true, true, id)
+    if (!admin || !active) && admin_users.blank?
+      errors.add(:admin, 'You cannot remove or make inactive the default admin account')
     end
+  end
+
+  def validate_email_domain
+    domain_list = Figaro.env.gate_hosted_domains.split(',')
+    domain = email.split('@').last
+    errors.add(:email, "Invalid Domain for Email Address") unless domain_list.include?(domain)
   end
 end
